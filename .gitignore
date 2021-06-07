@@ -1,0 +1,4 @@
+node_modules
+
+# Just in case to ignore data files
+*.csv
