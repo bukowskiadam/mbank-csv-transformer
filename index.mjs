@@ -2,6 +2,8 @@ import csv from "csv-parser";
 import fs from "fs";
 import iconv from "iconv-lite";
 
+import { rules } from "./rules-custom.mjs";
+
 const file = process.argv[2];
 
 const csvOptions = {
@@ -14,37 +16,83 @@ const printCsv = (data) => {
   console.log(data.map((x) => `"${x}"`).join(";"));
 };
 
-const handleData = (data) => {
-  if (!data["Tytuł"]) {
-    return;
+const trimWhitespace = (str) => str.trim();
+
+const parseCsvEntry = (data) => {
+  const rawTitle = data["Tytuł"];
+  if (!rawTitle) {
+    return null;
   }
 
-  const [titleWithPlace, transactionDate = data["Data operacji"]] =
-    data["Tytuł"].split("DATA TRANSAKCJI:");
+  const [titleWithPlace, transactionDate = data["Data operacji"]] = rawTitle
+    .split("DATA TRANSAKCJI:")
+    .map(trimWhitespace);
 
-  const [title, place = ""] = titleWithPlace.split("/");
+  const [title, place = ""] = titleWithPlace.split("/").map(trimWhitespace);
 
-  const description = [
-    title,
-    place,
-    data["Opis operacji"],
-    data["Nadawca/Odbiorca"],
-  ]
-    .map((str) => str.trim())
+  const description = data["Opis operacji"].trim();
+
+  const receipient = data["Nadawca/Odbiorca"].trim().replace(/ +/g, " ");
+
+  const combinedDescription = [title, place, description, receipient]
+    .map(trimWhitespace)
     .filter(Boolean)
     .join(" / ");
 
-  const newData = [
-    transactionDate.trim(),
+  const amount = data["Kwota"].replaceAll(" ", "");
+  const balance = data["Saldo po operacji"].replaceAll(" ", "");
+
+  return {
+    combinedDescription,
+    title,
+    place,
+    transactionDate,
+    receipient,
     description,
-    data["Kwota"].replaceAll(" ", ""),
-    data["Saldo po operacji"].replaceAll(" ", ""),
+    amount,
+    balance,
+  };
+};
+
+const processRules = (entry) => {
+  if (!entry) {
+    return null;
+  }
+
+  const matchingRule = rules.find((rule) => rule.matches(entry));
+
+  if (matchingRule) {
+    return matchingRule.apply(entry);
+  }
+
+  return entry;
+};
+
+const handleData = (data) => {
+  const entry = processRules(parseCsvEntry(data));
+
+  if (!entry) {
+    return;
+  }
+
+  const newData = [
+    entry.transactionDate,
+    entry.finalDescription || entry.combinedDescription,
+    entry.amount,
+    entry.balance,
+    entry.transferAccount || "Imbalance-PLN",
   ];
 
   printCsv(newData);
 };
 
-printCsv(["Data transakcji", "Opis", "Kwota", "Saldo po operacji"]);
+printCsv([
+  "Data transakcji",
+  "Opis",
+  "Kwota",
+  "Saldo po operacji",
+  "Konto docelowe",
+]);
 
 fs.createReadStream(file)
   .pipe(iconv.decodeStream("cp-1250"))

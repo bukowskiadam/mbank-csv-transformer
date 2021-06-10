@@ -2,3 +2,6 @@ node_modules
 
 # Just in case to ignore data files
 *.csv
+
+# ignore your custom rules
+rules-custom.mjs
